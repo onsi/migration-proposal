@@ -335,6 +335,8 @@ Not every story can end up with a version.  Rather, the team should be diligent 
 
 We should also be aggressive about bumping major versions (once a quarter?) and requiring folks to upgrade *through* major versions.
 
+> One open question is how CI will work.  If we clump a bunch of stories together and indicate that v1.1 comes out when all the stories are finished how do we CI individual commits?
+
 ## Where we go in the post-1.0 era
 
 After shipping a 1.0 release we are free to prioritize the following work in relation to the remaining tracks of work around performance and security.

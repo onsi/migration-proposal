@@ -144,6 +144,8 @@ Note that, with this approach, we can implement rollbacks at a later point in ti
 
 Let's now dive into the details for the BBS Migration mechanism.  In this section we assume no support for rollbacks (the earlier section illustrates what rollback support could look like).
 
+Here are 2 proposals.  A is more complex but paves the way for rollbacks a little more cleanly, feel free to jump down to B first.
+
 ### Proposal A - more complex, sets us up for rollbacks
 
 We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.

@@ -103,14 +103,14 @@ We have argued above that the primary API problem to solve is in the `X => BBS` 
 `X => BBS` communication entails a component `X` using a client that communicates with the `BBS`.  When upgrading from `vFoo` to `vBar` all the following states are possible:
 
  | `X vFoo` | `X vBar`
--|----------|------------
+--|----------|------------
 `BBS VFoo` | Yes | Yes
 `BBS VBar` | Yes | Yes
 
 However, if we require the `BBS` upgrade to occur first then we only need to worry about:
 
  | `X vFoo` | `X vBar`
--|-----------|----------
+--|-----------|----------
 `BBS VFoo` | Yes | No
 `BBS VBar` | Yes | Yes
 

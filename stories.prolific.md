@@ -170,6 +170,8 @@ Proposed version key:
 
 (We should flesh out the state machine for managing `CurrentEncryptionKeyName` and `TargetEncryptionKeyName`)
 
+One option is to have the encryption migration occur in the background.  Let's avoid this for now and, instead, have encryption be a stop-the-world migration.  We can reevaluate the performance implications at a later time.
+
 Acceptance:
 - After a BOSH deploy all my data is encrypted
 - I can change my encryption key.  The BOSH deploy should succeed.
@@ -217,3 +219,13 @@ L: versioning, diego:ga
 This ensure that subsequent work migrates cleanly.
 
 L: versioning
+
+---
+
+Set up a test suite that runs all migrations from 1.0.0 up for 100k records.
+
+Test suite should fail if migration time exceeds some threshold (2 minutes?)
+
+This can help us determine whether or not we want to implement background-migrations for things like rotating encryption keys.
+
+L: perf

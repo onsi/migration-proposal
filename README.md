@@ -303,37 +303,39 @@ Since the API is unavailable during a migration we don't have to worry too much 
 
 #### Versioning the API
 
-Let's just deal with `GET`s and `POST`s.
+Since the API is an RPC over HTTP implementation, all requests are POSTs, responses are always 200 OK with an encoded error in them.
+
+Let's just deal with a simple create and a read.
 
 The v1.1 BBS API implements:
 
 ```
-GET /v1/desired => func GetDesired_1_0()
-GET /v1.1/desired => func GetDesired() //note: the latest version is just "GetDesired"
+POST /v1/desired_lrps/list => 	func ListDesiredLRPs_1_0()
+POST /v1.1/desired_lrps/list => func ListDesiredLRPs() //note: the latest version is just "DesiredLRPs"
 
-POST /v1/desired => func PostDesired_1_0()
-POST /v1.1/desired => func PostDesired() //note: the latest version is just "PostDesired"
+POST /v1/desired_lrp/desire => func CreateDesiredLRP_1_0()
+POST /v1.1/desired_lrp/desire=> func CreateDesiredLRP() //note: the latest version is just "CreateDesiredLRP"
 ```
 
-##### `GetDesired_1_0`
+##### `ListDesiredLRPs_1_0`
 
 This fetches `DesiredLRP` instances from the database, then converts them to `DesiredLRP_1_0` instances via an appropriate transformation (see above).  The `DesiredLRP_1_0` instances are then sent down the wire.
 
-##### `GetDesired`
+##### `ListDesiredLRPs`
 
 This fetches `DesiredLRP` instances from the database and sends them down the wire.
 
-##### `PostDesired_1_0`
+##### `CreateDesiredLRP_1_0`
 
-This expects a `DesiredLRP_1_0` instance.  Converts it to a `DesiredLRP` instance via an appropriate transformation (see above) and puts in the database.  It takes appropriate actions (e.g. starting/stopping ActualLRPs) - this would likely be functionality shared between `PostDesired_1_0` and `PostDesired`
+This expects a `CreateDesiredLRP_1_0` instance.  Converts it to a `DesiredLRP` instance via an appropriate transformation (see above) and puts in the database.  It takes appropriate actions (e.g. starting/stopping ActualLRPs) - this would likely be functionality shared between `CreateDesiredLRP_1_0` and `CreateDesiredLRP`
 
-##### `PostDesired`
+##### `CreateDesiredLRP`
 
 This expects a `DesiredLRP` instance.  It puts it in the database then takes appropriate actions.
 
 #### Staying Sane
 
-Not every story can end up with a version.  Rather, the team should be diligent about using release markers to delineate minor/major versions.  This, ideally, will collapse multiple features into minor version bumps and allow us to move at a reasonable velocity without exploding the matrix of backward compatibility.  Unit tests should be sufficient to ensure the older-version methods work (e.g. `GetDesired_1_0`) though we will want an integration environment to ensure we can go from one major version to the next (see [Test Suites](#test-suites) below).
+Not every story can end up with a version.  Rather, the team should be diligent about using release markers to delineate minor/major versions.  This, ideally, will collapse multiple features into minor version bumps and allow us to move at a reasonable velocity without exploding the matrix of backward compatibility.  Unit tests should be sufficient to ensure the older-version methods work (e.g. `ListDesiredLRPs_1_0`) though we will want an integration environment to ensure we can go from one major version to the next (see [Test Suites](#test-suites) below).
 
 We should also be aggressive about bumping major versions (once a quarter?) and requiring folks to upgrade *through* major versions.
 

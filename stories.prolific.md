@@ -204,17 +204,17 @@ L: perf, versioning, diego:ga
 
 ---
 
-Cut Diego 1.0.0
+Cut Diego 0.9.0
 
-We draw a line in the sand.  All subsequent work should ensure a clean upgrade path from 1.0.0.
+We draw a line in the sand.  All subsequent work should ensure a clean upgrade path from 0.9.0.
 
-We call this 1.0.0 not to signify that all our GA goals have been met (performance is still somewhat lacking).  However this gives us a reference point to be disciplined about maintaining backward compatibility during subsequent deploys.
+We call this 0.9.0 not to signify that all our GA goals have been met (performance is still somewhat lacking).  However this gives us a reference point to be disciplined about maintaining backward compatibility during subsequent deploys.
 
 L: versioning, diego:ga
 
 ---
 
-[CHORE] Diego has an integration suite/environment that validates that upgrades from 1.0.0 to HEAD satisfy the minimal-downtime requirement
+[CHORE] Diego has an integration suite/environment that validates that upgrades from 0.9.0 to HEAD satisfy the minimal-downtime requirement
 
 This ensure that subsequent work migrates cleanly.
 
@@ -222,7 +222,7 @@ L: versioning
 
 ---
 
-Set up a test suite that runs all migrations from 1.0.0 up for 100k records.
+Set up a test suite that runs all migrations from 0.9.0 up for 100k records.
 
 Test suite should fail if migration time exceeds some threshold (2 minutes?)
 

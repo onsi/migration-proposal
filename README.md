@@ -406,6 +406,10 @@ WRITE X3
 DELETE X1
 ```
 
+#### Support Non-Blocking Background Migrations
+
+These could be used to apply expensive format changes (e.g. Encryption key rotation) across the database with no downtime.
+
 #### Maintaining Read Access during a Migration
 
 Is this possible?  What might it look like?

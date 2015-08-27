@@ -35,6 +35,16 @@ L: versioning, diego:ga
 
 ---
 
+All Stager communication should happen directly with the BBS
+
+Acceptance:
+- I can stop the receptor...
+- ...and `cf push` still works
+
+L: versioning, diego:ga
+
+---
+
 All CC-Bridge communication should happen directly with the BBS
 
 Acceptance:
@@ -50,6 +60,16 @@ All Route-Emitter communication should happen directly with the BBS
 Acceptance:
 - I can stop the receptor...
 - ...and still route to my apps.
+
+L: versioning, diego:ga
+
+---
+
+All SSH-Proxy communication shoudl happen directly with the BBS
+
+Acceptance:
+- I can stop the receptor...
+- ...and still ssh to my app.
 
 L: versioning, diego:ga
 

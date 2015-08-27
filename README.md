@@ -253,11 +253,7 @@ At the level of the go client, we propose that a BBS server be tied to a version
 
 ## A Worked Example
 
-Here's a novel change that we haven't discussed before.  Let's explore how we perform a rolling deploy that makes this change possible.
-
-Today, Diego's DesiredLRPs have a single `Instances int` field that represents the desired number of instances.  As Diego evolves to support more complex workloads we may want to have flexibility to perform complex deploys that start/stop specific instances.  One approach might be to replace `Instances int` with `Indices []int` (let's not worry about the merits of this approach!).
-
-An ActualLRP should be running if and only if, `actual.Index` appears in `desired.Indices`.
+We've talked about splitting Desired LRPs into two (or more) objects. I'll explore a hypothetical approach for that as an example here.
 
 #### The Version Change
 
@@ -265,73 +261,100 @@ This is not a major change so we can go from (e.g.) `v1.0` to `v1.1` when we imp
 
 #### Models in the BBS
 
-We clone the existing `DesiredLRP` model and save off a copy called `DesiredLRP_1_0`:
+We create two new messages in the BBS `MutableDesiredLRP` and `ImmutableDesiredLRP`, we then deprecated the old `DesiredLRP` message and the RPC stuff (RPC service protobuf is also imaginary here since we have a custom implementation for the time being):
 
-```
-type DesiredLRP struct {
-    ...
-    Indices []int
-    ...
+```protobuf
+// v1.0.0 -- deprecated
+message DesiredLRP {
+  option deprecated = true;
+
+  // ...
 }
 ```
 
-```
-type DesiredLRP_1_0 struct {
-    ...
-    Instances int
-    ...
+```protobuf
+message MutableDesiredLRP {
+  optional string process_guid = 1;
+  optional int32 instances = 2;
+  optional bytes routes = 3 [(gogoproto.nullable) = true, (gogoproto.customtype) = "Routes"];
+  optional string annotation = 4;
+}
+
+message ImmutableDesiredLRP {
+  optional string process_guid = 1;
+  // all the other fields...
 }
 ```
-
-Note that we only need to introduce this versioned model when we deem it necessary.  `DesiredLRP_1_0` should be consider frozen in time and should *never* be modified.
 
 #### Migrating Data
 
 We write an `UpMigration` that:
 
-1. Fetches the contents of the database into instances of `DesiredLRP_1_0`
-2. Generates (in memory) `DesiredLRP` instances by creating an appropriate array of `Indices` (e.g. if `Instances = 3` then `Indices = []int{0,1,2}`)
+1. Fetches the contents of the database into instances of `DesiredLRP`
+2. Generates (in memory) `MutableDesiredLRP`/`ImmutableDesiredLRP` instances based on the `DesiredLRP`s
 3. Writes the data
 
 We can also (if we implement rollbacks) write a `DownMigration` that:
 
-1. Fetches the contents of the database into instances of `DesiredLRP`
-2. Generates (in memory) `DesiredLRP_1_0` with `Instances = len(Indices)` (yes, this isn't exactly right, but it's a reasonable assumption)
+1. Fetches the contents of the database into instances of `MutableDesiredLRP`/`ImmutableDesiredLRP`
+2. Generates (in memory) `DesiredLRP` with the contents of the `MutableDesiredLRP`/`ImmutableDesiredLRP` merged together again
 3. Writes the data
 
-Since the API is unavailable during a migration we don't have to worry too much about dealing with mixed data states.  We may, however, need to encode the version on each record to be able to recover from a failed/partial migration.
+#### The API
 
-#### Versioning the API
+Since the API is also build of protobuf messages the change is similar. We now define new messages and deprecate the old ones:
 
-Since the API is an RPC over HTTP implementation, all requests are POSTs, responses are always 200 OK with an encoded error in them.
+```protobuf
+// v1.0.0 -- deprecated
+message CreateDesiredLRPRequest_1_0 {
+  option deprecated = true;
 
-Let's just deal with a simple create and a read.
+  optional DesiredLRP desired_lrp = 1;
+}
 
-The v1.1 BBS API implements:
+// v1.0.0 -- deprecated
+message ListDesiredLRPsResponse_1_0 {
+  option deprecated = true;
 
-```
-POST /v1/desired_lrps/list => 	func ListDesiredLRPs_1_0()
-POST /v1.1/desired_lrps/list => func ListDesiredLRPs() //note: the latest version is just "DesiredLRPs"
+  optional Error error = 1;
+  repeated DesiredLRP desired_lrps = 2;
+}
 
-POST /v1/desired_lrp/desire => func CreateDesiredLRP_1_0()
-POST /v1.1/desired_lrp/desire=> func CreateDesiredLRP() //note: the latest version is just "CreateDesiredLRP"
+message ListMutableDesiredLRPsResponse {
+  optional Error error = 1;
+  repeated MutableDesiredLRP mutable_desired_lrps = 2;
+}
+
+message ListImmutableDesiredLRPsResponse {
+  optional Error error = 1;
+  repeated ImmutableDesiredLRP immutable_desired_lrps = 2;
+}
+
+message CreateDesiredLRPRequest {
+  optional MutableDesiredLRP mutable_desired_lrp = 1;
+  optional ImmutableDesiredLRP immutable_desired_lrp = 2;
+}
+
+service DesiredLRPService {
+  rpc ListMutableDesiredLRPs (ListMutableDesiredLRPsRequest) returns (ListMutableDesiredLRPsResponse);
+  rpc ListImmutableDesiredLRPs (ListImmutableDesiredLRPsRequest) returns (ListImmutableDesiredLRPsResponse);
+  rpc CreateDesiredLRP (CreateDesiredLRPsRequest) returns (CreateDesiredLRPResponse);
+
+  // v1.0.0 -- deprecated
+  rpc ListDesiredLRPs_1_0 (ListDesiredLRPsRequest_1_0) returns (ListDesiredLRPsResponse_1_0);
+  rpc CreateDesiredLRP_1_0 (CreateDesiredLRPsRequest_1_0) returns (CreateDesiredLRPResponse_1_0);
+}
 ```
 
 ##### `ListDesiredLRPs_1_0`
 
-This fetches `DesiredLRP` instances from the database, then converts them to `DesiredLRP_1_0` instances via an appropriate transformation (see above).  The `DesiredLRP_1_0` instances are then sent down the wire.
-
-##### `ListDesiredLRPs`
-
-This fetches `DesiredLRP` instances from the database and sends them down the wire.
+Fetches `MutableDesiredLRP`s and `ImmutableDesiredLRP`s merge them together into `DesiredLRP`s and sends `DesiredLRP` instances down the wire via the `ListDesiredLRPResponse_1_0`
 
 ##### `CreateDesiredLRP_1_0`
 
-This expects a `CreateDesiredLRP_1_0` instance.  Converts it to a `DesiredLRP` instance via an appropriate transformation (see above) and puts in the database.  It takes appropriate actions (e.g. starting/stopping ActualLRPs) - this would likely be functionality shared between `CreateDesiredLRP_1_0` and `CreateDesiredLRP`
+Expects a `CreateDesiredLRPRequest_1_0`, extracts an instance of `DesiredLRP` from it, then splits it into `MutableDesiredLRP`/`ImmutableDesiredLRP` and stores those.
 
-##### `CreateDesiredLRP`
-
-This expects a `DesiredLRP` instance.  It puts it in the database then takes appropriate actions.
+No translation necessary for the newer methods since they can assume the data is already migrated.
 
 #### Staying Sane
 

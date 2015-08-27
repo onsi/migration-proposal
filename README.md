@@ -51,10 +51,11 @@ Various bits of Diego talk to other bits of Diego.  As the cluster rolls, these 
 - External
     - `CCBridge => BBS`
     - `Route-Emitter => BBS`
+    - `BBS => X` (`TaskCompletionCallback`)
 
-Versioning the API entails ensuring that these communication flows can happen even when the cluster is in a mixed state.  Since most communication is of the form X => BBSwe are in pretty good shape and can focus on reasoning about versioning access to the BBS.
+Versioning the API entails ensuring that these communication flows can happen even when the cluster is in a mixed state.  Since most communication is of the form `X => BBS` we are in pretty good shape and can focus on reasoning about versioning access to the BBS.
 
-There are two exceptions which we will deal with here:
+There are three exceptions which we will deal with here:
 
 ##### `BBS => Rep` (`StopActualLRPInstance`)
 
@@ -67,6 +68,10 @@ Here too the surface area is small.  While it is unlikely for the *actions* to c
 This is something that could be handled somewhat transparently in the auction package. One straightforward thing that we might consider doing up front is to limit auction communication to focus purely on *resources* and *identifiers*.  For example, the `LRP`, `Task`, and `Resources` structs in the [Auction types package](https://github.com/cloudfoundry-incubator/auction/blob/master/auctiontypes/types.go#L126-L147).  This allows us to only worry about versioning data specific to the auction.
 
 We don't currently do this, and it's a problem that we should address before we ship.  In particular, we schlep the entire `DesiredLRP` and `Task` payload through the auctioneer.  Not only is this inefficient, it is also unnecessary and complicates the versioning problem.  Far better would be for the `BBS` to request auctions that are purely comprised of identifiers and resources (again, `LRP` and `Task` in the [Auction types package](https://github.com/cloudfoundry-incubator/auction/blob/master/auctiontypes/types.go#L126-L147) are exactly what I'm talking about) and have the Rep request the relevant `DesiredLRP` and `Task` at container creation time.  This allows us to consolidate all versioning of `DesiredLRP` and `Task` in the `X => BBS` direction.
+
+##### `BBS => X` (`TaskCompletionCallback`)
+
+Rather than attempt to version the Task across this communication path it will be simpler to call the `TaskCompletionCallback` with the task guid and have the consumer fetch the Task from the BBS and then delete it to indicate they've dealt with it.
 
 ## Three Simplifying Assumptions
 

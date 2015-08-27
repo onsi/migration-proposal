@@ -10,7 +10,7 @@ This MVP approach is relentlessly focused on getting Diego into production envir
 
 ### What is an adequate solution to The Versioning Problem?
 
-Our goal is to release a version of Diego (version 1.0.0) such that:
+Our goal is to release a version of Diego (version 0.9.0) such that:
 
 1. upgrades to subsequent versions can be accomplished with **minimal downtime** (see below)
 2. we can iterate on Diego's features, add new functionality, and refactor Diego without excessive fear or concern of breaking #1
@@ -133,11 +133,11 @@ If we require that the BBS roll first, and succefully transition from the curren
 
 ### No Rollbacks
 
-As with the previous simplification, this is one we can undo later if we find we need to.  Rather than worry about supporting rolling back a Diego cluster up front I believe we can ship 1.0 without this support, but tack it on as a followup feature (perhaps after the performance work is done - we are free to prioritize as we wish).
+As with the previous simplification, this is one we can undo later if we find we need to.  Rather than worry about supporting rolling back a Diego cluster up front I believe we can ship 0.9 without this support, but tack it on as a followup feature (perhaps after the performance work is done - we are free to prioritize as we wish).
 
-Diego is built to be able to recreate the contents of ETCD in the case of catastrophic failure.  We want to end up in a place where we do not rely on this behavior - however, we can use this to our advantage and be aggressive about shipping 1.0 without having to fully solve the rollback scenario.  We could, instead, instruct operators to rollback to a previous version (ensure the cells go first), then nuke etcd and restart the BBS.
+Diego is built to be able to recreate the contents of ETCD in the case of catastrophic failure.  We want to end up in a place where we do not rely on this behavior - however, we can use this to our advantage and be aggressive about shipping 0.9 without having to fully solve the rollback scenario.  We could, instead, instruct operators to rollback to a previous version (ensure the cells go first), then nuke etcd and restart the BBS.
 
-In reality, supporting rollbacks should not be particularly challenging, especially in the single-master BBS.  While I don't think we need this figured out for 1.0, here's a sketch of how a rollback could work:
+In reality, supporting rollbacks should not be particularly challenging, especially in the single-master BBS.  While I don't think we need this figured out for 0.9, here's a sketch of how a rollback could work:
 
 1. We commit to implementing down-migrations for each up-migration.
 2. Operators perform a manifest-only deploy that sets a flag on the BBS server to `--rollback-on-drain-to-version=ROLLBACK_TARGET`
@@ -262,14 +262,14 @@ We've talked about splitting Desired LRPs into two (or more) objects. I'll explo
 
 #### The Version Change
 
-This is not a major change so we can go from (e.g.) `v1.0` to `v1.1` when we implement this change.
+This is not a major change so we can go from (e.g.) `v0.9` to `v0.10` when we implement this change.
 
 #### Models in the BBS
 
 We create two new messages in the BBS `MutableDesiredLRP` and `ImmutableDesiredLRP`, we then deprecated the old `DesiredLRP` message and the RPC stuff (RPC service protobuf is also imaginary here since we have a custom implementation for the time being):
 
 ```protobuf
-// v1.0.0 -- deprecated
+// v0.9.0 -- deprecated
 message DesiredLRP {
   option deprecated = true;
 
@@ -310,14 +310,14 @@ We can also (if we implement rollbacks) write a `DownMigration` that:
 Since the API is also build of protobuf messages the change is similar. We now define new messages and deprecate the old ones:
 
 ```protobuf
-// v1.0.0 -- deprecated
+// v0.9.0 -- deprecated
 message CreateDesiredLRPRequest_1_0 {
   option deprecated = true;
 
   optional DesiredLRP desired_lrp = 1;
 }
 
-// v1.0.0 -- deprecated
+// v0.9.0 -- deprecated
 message ListDesiredLRPsResponse_1_0 {
   option deprecated = true;
 
@@ -345,37 +345,37 @@ service DesiredLRPService {
   rpc ListImmutableDesiredLRPs (ListImmutableDesiredLRPsRequest) returns (ListImmutableDesiredLRPsResponse);
   rpc CreateDesiredLRP (CreateDesiredLRPsRequest) returns (CreateDesiredLRPResponse);
 
-  // v1.0.0 -- deprecated
-  rpc ListDesiredLRPs_1_0 (ListDesiredLRPsRequest_1_0) returns (ListDesiredLRPsResponse_1_0);
-  rpc CreateDesiredLRP_1_0 (CreateDesiredLRPsRequest_1_0) returns (CreateDesiredLRPResponse_1_0);
+  // v0.9.0 -- deprecated
+  rpc ListDesiredLRPs_0_9 (ListDesiredLRPsRequest_0_9) returns (ListDesiredLRPsResponse_0_9);
+  rpc CreateDesiredLRP_0_9 (CreateDesiredLRPsRequest_0_9) returns (CreateDesiredLRPResponse_0_9);
 }
 ```
 
-##### `ListDesiredLRPs_1_0`
+##### `ListDesiredLRPs_0_9`
 
-Fetches `MutableDesiredLRP`s and `ImmutableDesiredLRP`s merge them together into `DesiredLRP`s and sends `DesiredLRP` instances down the wire via the `ListDesiredLRPResponse_1_0`
+Fetches `MutableDesiredLRP`s and `ImmutableDesiredLRP`s merge them together into `DesiredLRP`s and sends `DesiredLRP` instances down the wire via the `ListDesiredLRPResponse_0_9`
 
-##### `CreateDesiredLRP_1_0`
+##### `CreateDesiredLRP_0_9`
 
-Expects a `CreateDesiredLRPRequest_1_0`, extracts an instance of `DesiredLRP` from it, then splits it into `MutableDesiredLRP`/`ImmutableDesiredLRP` and stores those.
+Expects a `CreateDesiredLRPRequest_0_9`, extracts an instance of `DesiredLRP` from it, then splits it into `MutableDesiredLRP`/`ImmutableDesiredLRP` and stores those.
 
 No translation necessary for the newer methods since they can assume the data is already migrated.
 
 #### Staying Sane
 
-Not every story can end up with a version.  Rather, the team should be diligent about using release markers to delineate minor/major versions.  This, ideally, will collapse multiple features into minor version bumps and allow us to move at a reasonable velocity without exploding the matrix of backward compatibility.  Unit tests should be sufficient to ensure the older-version methods work (e.g. `ListDesiredLRPs_1_0`) though we will want an integration environment to ensure we can go from one major version to the next (see [Test Suites](#test-suites) below).
+Not every story can end up with a version.  Rather, the team should be diligent about using release markers to delineate minor/major versions.  This, ideally, will collapse multiple features into minor version bumps and allow us to move at a reasonable velocity without exploding the matrix of backward compatibility.  Unit tests should be sufficient to ensure the older-version methods work (e.g. `ListDesiredLRPs_0_9`) though we will want an integration environment to ensure we can go from one major version to the next (see [Test Suites](#test-suites) below).
 
 We should also be aggressive about bumping major versions (once a quarter?) and requiring folks to upgrade *through* major versions.
 
 > One open question is how CI will work.  If we clump a bunch of stories together and indicate that v1.1 comes out when all the stories are finished how do we CI individual commits?
 
-## Where we go in the post-1.0 era
+## Where we go in the post-0.9 era
 
-After shipping a 1.0 release we are free to prioritize the following work in relation to the remaining tracks of work around performance and security.
+After shipping an 0.9 release we are free to prioritize the following work in relation to the remaining tracks of work around performance and security.
 
 #### Test suites
 
-Ted's writeup[here](https://docs.google.com/document/d/1H2mD1ZAR9N4zVn_Y06FqpoYZwn0cf6i2o1EqorAD70I/edit#heading=h.4qopv1l933ib) has a detailed section on migration testing.  This is all good stuff that we should build out shortly after hitting 1.0.
+Ted's writeup[here](https://docs.google.com/document/d/1H2mD1ZAR9N4zVn_Y06FqpoYZwn0cf6i2o1EqorAD70I/edit#heading=h.4qopv1l933ib) has a detailed section on migration testing.  This is all good stuff that we should build out shortly after hitting 0.9.
 
 #### Performance validated checks on whether or not we need more than 1 reader/writer
 

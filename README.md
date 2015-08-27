@@ -34,9 +34,11 @@ There are two primary aspects of Diego that require versioning.
 
 We've made a distinction between versioning the *encoding* (e.g. JSON, protobuf, encrypted protobuf) of the data in the database and versioning the *schema* of the data in the database.  The *schema* is far ranging and entails both the data *fields* associated with individual models *and* the *layout* in the database (e.g. etcd key-paths).
 
-I propose that this distinction is actually unnecessary and can be captured as a single database *version* that encapsulates both schema and encoding.
+My understanding is that the work we've done with the tasks allows us to include an encoding and version on each record in the database.  This is important primarily in the context of a failed migration.
 
-I further propose, in line with the definition of **minimal downtime** that it is OK for Diego to experience complete API downtime during a migration of the database version.  We should characterize the duration of this downtime as a function of data size and and keep tabs on it as we introduce new migrations.  See the discussion in the [Keeping Migration Times Short](#keeping-migration-times-short) section below.
+If we *could* assume that migrations never fail we would not need to worry about the encoding/version for individual records.  We could have a single version that applies, globally, to the entire database.  However, since a migration *can* fail mid-flight.  We cannot rely on a single global version and must include encoding and version information in the individual models.  That way we can pick up a half-baked migration from where it left off.
+
+The presence of a global DB version, however, does allow us to get concrete about how we version and migrate the database.  We'll cover this in more detail [below](https://github.com/onsi/migration-proposal#the-bbs-migration-mechanism).  For now, we argue that in light of our understanding of **minimal downtime** it is OK for Diego to experience complete API downtime during a migration of the database version.  We should characterize the duration of this downtime as a function of data size and and keep tabs on it as we introduce new migrations.  See the discussion in the [Keeping Migration Times Short](#keeping-migration-times-short) section below.
 
 #### 2. The API
 
@@ -239,7 +241,7 @@ And here's what the actions correspond to:
 
 ### Handling failed migrations
 
-If a migration fails mid-way we need to be able to idempotently rerun the migration.  This may require encoding the version of each individual model entry in the database.
+If a migration fails mid-way we need to be able to idempotently rerun the migration.  This requires encoding the version of each individual model entry in the database.
 
 ## Versioning APIs and Clients
 

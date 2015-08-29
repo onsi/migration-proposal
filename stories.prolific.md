@@ -1,75 +1,6 @@
-The auction should only send resources and identifiers back and forth
+[CHORE] Remove legacyBBS from the Auctioneer
 
-Currently we send the entire DesiredLRP/Task payload which gives us yet-another-thing to version.
-
-Instead we should only send the bare minimum required for the rep to make a reservation and the auctioneer to decide how to allocate resources.
-
-Acceptance:
-
-- The /state and /work endpoints on the rep do not return/require Task/DesiredLRP payloads
-- The auction request endpoints on the auctioneer do not require Task/DesiredLRP payloads
-
-L: versioning, diego:ga
-
----
-
-The Task callback URL should only receive a Task identifier
-
-This means we don't have to worry about versioning tasks back to the callback URL.  Instead, the recipient can then reach out, fetch the task, and mark it as completed.
-
-We'll need to update the stager to work with this.  We should also notify lattice, etc. of the change.
-
-Acceptance:
-
-- My registered Task completion callback only receives the TaskID
-- I can then fetch the TaskID (it remains in the COMPLETED state)
-- I am responsible for subsequently deleting the TaskID
-- If I do not remove my COMPLETED task I should expect to receive another notification (eventually: this is existing behavior)
-- If I never remove my COMPLETED task the converger should garbage collect it (eventually: this is existing behavior)
-
-In addition:
-- Staging should still work
-- We should not leak COMPLETED tasks (i.e. the stager should remove that Task)
-
-L: versioning, diego:ga
-
----
-
-All Stager communication should happen directly with the BBS
-
-Acceptance:
-- I can stop the receptor...
-- ...and `cf push` still works
-
-L: versioning, diego:ga
-
----
-
-All CC-Bridge communication should happen directly with the BBS
-
-Acceptance:
-- I can stop the receptor...
-- ...and `cf push` still works
-
-L: versioning, diego:ga
-
----
-
-All Route-Emitter communication should happen directly with the BBS
-
-Acceptance:
-- I can stop the receptor...
-- ...and still route to my apps.
-
-L: versioning, diego:ga
-
----
-
-All SSH-Proxy communication shoudl happen directly with the BBS
-
-Acceptance:
-- I can stop the receptor...
-- ...and still ssh to my app.
+The Auctioneer is still referencing `legacyBBS` (i.e. `runtime-schema`).  It does this to fetch the set of Cells.  This should be an API on the BBS (it can reach out to consul to get the relevant data).
 
 L: versioning, diego:ga
 
@@ -88,20 +19,23 @@ All access to the BBS should go through one, master-elected, BBS server
 
 We set this up to drive out the rest of the migration work.
 
+All slave BBS servers should redirect to the master.
+
 Acceptance: 
-- I can only direct read/write requests to one BBS server
+- I get a redirect when I talk to a slave.
 
 L: versioning, diego:ga
 
 ---
 
-After a BOSH deploy, all Task data in the BBS should be stored in base64 encoded protobuf format
+After a BOSH deploy, all data in the BBS should be stored in base64 encoded protobuf format
 
 This drives out (see https://github.com/onsi/migration-proposal#the-bbs-migration-mechanism):
 
 - introducing a database version
 - teaching the BBS server to run the migration on start
 - teaching the BBS server to bump the database version upon a succesful migration
+- removing the command line arguments that control the data encoding
 
 Acceptance:
 - After completing a BOSH deploy I see Task data in the BBS stored in base64 encoded protobuf format
@@ -111,11 +45,9 @@ L: versioning, diego:ga
 
 ---
 
-If the BBS is killed mid-migration, bringing the BBS back completes the migration
+[BUG] If the BBS is killed mid-migration, bringing the BBS back completes the migration
 
-I propose using this to drive out adding encoding/versioning information to each database record.  (We've already done this but I might have ordered the stories this way instead)
-
-This also drives out managing the database version in the case of a failed migration.
+This drives out managing the database version in the case of a failed migration.
 
 Acceptance:
 - while true; do
@@ -131,7 +63,8 @@ L: versioning, diego:ga
 
 During a migration, the BBS should return 503 for all requests
 
-All clients should forward the 503 error along where appropriate.
+- CC-Bridge components should forward the 503 error along where appropriate.
+- Route-Emitter should maintain the routing table and continue emitting it
 
 Acceptance:
 - I set up a long-running migration (perhaps I have a lot of data)
@@ -141,62 +74,19 @@ L: versioning, diego:ga
 
 ---
 
-If a migration fails, the BOSH deploy should abort and no Cells should roll
+If a migration fails, I should be able to BOSH deploy the previously deployed release and recover.
 
-This may prove difficult with BOSH.  Perhaps:
-
-- If the BBS fails to get the lock: it should mark itself as running.
-- If the BBS grabs the lock: it only marks itself as running after the migration completes.
-
-?
-
-Acceptance:
-- I see the BBS roll first (before Cells roll)
-- I can insert malformed data into the database.  This causes the migration to fail.  If this happens, BOSH should stop the deploy.  My apps should continue to run and be routable.  I have no access to the API, however.
+If we keep the `/vN` root node then this becomes trivial.  We simply don't delete the `/vN-1` root node until after the migration.
 
 L: versioning, diego:ga
 
 ---
 
-All LRP data should be stored in base64 encoded protobuf format
+If the Rep repeatedly fails to mark its ActualLRPs as EVACUATING it should fail to drain and the BOSH deploy should abort.
 
-This should bump the DB version.  All LRP data should get migrated via a BOSH deploy.
-
-This allows us to practice another migration.
-
-Acceptance:
-- After a BOSH deploy I see all LRPs stored in base64 encoded protobuf format
+This is a safety valve.  It ensures we don't catastrophically lose all the applications if the BBS is unavailable.  We should be somewhat generous with the retry and perhaps require that all requests fail.  The Cell should exit EVACUATING mode if this happens.
 
 L: versioning, diego:ga
-
----
-
-As a Diego operator, I would like to specify a set of decryption keys to use to decrypt data at rest, with one encryption key to be used when writing data
-
-The encryption should occur during the migration phase via a BOSH deploy.  We can accomplish this by including the encryption key name in the DB version key.  To ensure success in the face of a mid-migration failure, we should also append the key-name to each record.
-
-Proposed data payload: 0007key-name:base64-encoded-data
-
-Proposed version key:
-```
-{
-    CurrentVersion int
-    TargetVersion int
-
-    CurrentEncryptionKeyName string
-    TargetEncryptionKeyName string
-}
-```
-
-(We should flesh out the state machine for managing `CurrentEncryptionKeyName` and `TargetEncryptionKeyName`)
-
-One option is to have the encryption migration occur in the background.  Let's avoid this for now and, instead, have encryption be a stop-the-world migration.  We can reevaluate the performance implications at a later time.
-
-Acceptance:
-- After a BOSH deploy all my data is encrypted
-- I can change my encryption key.  The BOSH deploy should succeed.
-
-L: versioning, security, diego:ga
 
 ---
 
@@ -224,6 +114,12 @@ L: perf, versioning, diego:ga
 
 ---
 
+All Diego components should communicate securely via mutually-authenticated SSL
+
+L: versioning, diego:ga
+
+---
+
 Cut Diego 0.9.0
 
 We draw a line in the sand.  All subsequent work should ensure a clean upgrade path from 0.9.0.
@@ -236,7 +132,7 @@ L: versioning, diego:ga
 
 [CHORE] Diego has an integration suite/environment that validates that upgrades from 0.9.0 to HEAD satisfy the minimal-downtime requirement
 
-This ensure that subsequent work migrates cleanly.
+This ensures that subsequent work migrates cleanly.
 
 L: versioning
 
@@ -249,3 +145,23 @@ Test suite should fail if migration time exceeds some threshold (2 minutes?)
 This can help us determine whether or not we want to implement background-migrations for things like rotating encryption keys.
 
 L: perf
+
+---
+
+The converger should run convergence, not the BBS.
+
+To do this we'll want to:
+
+1. Separate Task & Desired/Actual LRP convergence from the database-cleanup convergence.
+2. Have the BBS perform database-cleanup periodically.
+3. Have the Converger *fetch* data from the BBS, harmonize it, then update the BBS as relevant.
+
+L: versioning, cleanup
+
+---
+
+I can rollback a migration to an earlier release
+
+We can either run a bosh errand that triggers down-migrations to the specified version.  Or (better?) we can write a drain script on the BBS that triggers the down-migration -- is there any way to specify the target version this way?  If we go that direction how do we prevent other BBSes from rerunning up migrations.
+
+L: versioning, needs-definition

@@ -155,7 +155,7 @@ Here are 2 proposals.  A is more complex but paves the way for rollbacks a littl
 
 ### Proposal A - more complex, sets us up for rollbacks
 
-We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
+We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer (in fact, a timestamp) - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
 
 The current state of the database is stored *in* the database under a `/version` key.  This key has a (JSON/Protobuf-encoded) value of the form:
 
@@ -202,7 +202,7 @@ And here's what the actions correspond to:
 
 ### Proposal B - simpler, might need tweaks to support rollbacks
 
-We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
+We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer (in fact, a timestamp) - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
 
 The current state of the database is stored *in* the database under a `/version` key.  This key has a (JSON/Protobuf-encoded) value of the form:
 
@@ -247,6 +247,20 @@ And here's what the actions correspond to:
 ### Handling failed migrations
 
 If a migration fails mid-way we need to be able to idempotently rerun the migration.  This requires encoding the version of each individual model entry in the database.
+
+### Key Layout
+
+We've gone back and forth on this.  With the presence of the `/version` key there is no need, in principal, to retain the `/v1` root key node.
+
+However, retaining the `/vN` root key node and choosing *not* to delete it until the *end* of a migration allows us to handle migration failures without having rollbacks as older version of the BBS can continue to operate on the older `/vN` root node.
+
+## Encrypting the Database
+
+The existing stories cover encrypting/decrypting the database quite clearly.  To summarize:
+
+- The BBS server can use any number of named decryption keys and a single named encryption key.
+- Each record is encoded with the name of the relevant encryption/decryption key.
+- To roll out a new encryption key we perform a rolling deploy.  Upon success, we invoke an errand that then (re)encrypts the database.
 
 ## Versioning APIs and Clients
 

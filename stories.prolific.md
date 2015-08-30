@@ -28,6 +28,24 @@ L: versioning, diego:ga
 
 ---
 
+The master-elected BBS server should never allow multiple simultaneous LRP/Task Convergence runs
+
+Currently, the endpoints that trigger convergence will always spin up a convergence goroutine.  Instead, if a convergence goroutine is still running we should queue up at most *one* additional convergence request to run.  (i.e. if during a given convergence run *multiple convergence requests come in* we should only queue up *one* additional convergence request).
+
+L: versioning, diego:ga
+
+---
+
+BBS server should emit metrics
+
+- Convergence-related metrics (these were lost when we gutted the converger)
+- BBS requests (both # of requests so we can compute request rates, and request latencies)
+- All metrics emitted by the metrics server could, and should, just be emitted by the BBS during the convergence loop.
+
+L: versioning, diego:ga
+
+---
+
 After a BOSH deploy, all data in the BBS should be stored in base64 encoded protobuf format
 
 This drives out (see https://github.com/onsi/migration-proposal#the-bbs-migration-mechanism):
@@ -41,7 +59,7 @@ Acceptance:
 - After completing a BOSH deploy I see Task data in the BBS stored in base64 encoded protobuf format
 - I can (manually) fetch a database version key from etcd
 
-L: versioning, diego:ga
+L: versioning, diego:ga, migrations
 
 ---
 
@@ -57,7 +75,7 @@ Acceptance:
     - I bring the BBS back
     - I see protobuf-encoded tasks, only
 
-L: versioning, diego:ga
+L: versioning, diego:ga, migrations
 
 ---
 
@@ -70,7 +88,7 @@ Acceptance:
 - I set up a long-running migration (perhaps I have a lot of data)
 - I see requests to the BBS return 503 during the migration
 
-L: versioning, diego:ga
+L: versioning, diego:ga, migrations
 
 ---
 
@@ -78,15 +96,15 @@ If a migration fails, I should be able to BOSH deploy the previously deployed re
 
 If we keep the `/vN` root node then this becomes trivial.  We simply don't delete the `/vN-1` root node until after the migration.
 
-L: versioning, diego:ga
+L: versioning, diego:ga, migrations
 
 ---
 
 If the Rep repeatedly fails to mark its ActualLRPs as EVACUATING it should fail to drain and the BOSH deploy should abort.
 
-This is a safety valve.  It ensures we don't catastrophically lose all the applications if the BBS is unavailable.  We should be somewhat generous with the retry and perhaps require that all requests fail.  The Cell should exit EVACUATING mode if this happens.
+This is a safety valve.  It ensures we don't catastrophically lose all the applications if the BBS is unavailable.  We should be somewhat generous and retry our evacuation requests repeatedly and perhaps require that all the requests fail or 503.  The Cell should exit EVACUATING mode if this happens.
 
-L: versioning, diego:ga
+L: versioning, diego:ga, migrations
 
 ---
 
@@ -107,12 +125,22 @@ As a BBS client, I can efficiently get frequently accessed data for all DesiredL
 
 Add a new API endpoint
 
-Acceptance:
-- NSYNC bulker and Route-Emitter should operate more efficiently because they only require a (small) subset of data.
+L: perf, versioning, diego:ga
+
+---
+
+NSYNC's bulker should fetch the minimal set of DesiredLRP data
 
 L: perf, versioning, diego:ga
 
 ---
+
+Route-Emitter's bulk loop should fetch the minimal set of DesiredLRP data
+
+L: perf, versioning, diego:ga
+
+---
+
 
 All Diego components should communicate securely via mutually-authenticated SSL
 
@@ -164,4 +192,4 @@ I can rollback a migration to an earlier release
 
 We can either run a bosh errand that triggers down-migrations to the specified version.  Or (better?) we can write a drain script on the BBS that triggers the down-migration -- is there any way to specify the target version this way?  If we go that direction how do we prevent other BBSes from rerunning up migrations.
 
-L: versioning, needs-definition
+L: versioning, needs-discussion

@@ -254,13 +254,49 @@ We've gone back and forth on this.  With the presence of the `/version` key ther
 
 However, retaining the `/vN` root key node and choosing *not* to delete it until the *end* of a migration allows us to handle migration failures without having rollbacks as older version of the BBS can continue to operate on the older `/vN` root node.
 
+
 ## Encrypting the Database
 
-The existing stories cover encrypting/decrypting the database quite clearly.  To summarize:
+We can also use the BBS migration system to handle encryption of data at rest in etcd. The BBS should be configured with the following data:
 
-- The BBS server can use any number of named decryption keys and a single named encryption key.
-- Each record is encoded with the name of the relevant encryption/decryption key.
-- To roll out a new encryption key we perform a rolling deploy.  Upon success, we invoke an errand that then (re)encrypts the database.
+- A non-empty set of named encryption keys (for example, `A:abc123`, `B:bef456`).
+- A single key name designated as active (for example, `A`).
+
+Encryption key names should be strictly alphanumeric and are case-sensitive; see below for other potential constraints on the key format. It will be a BBS configuration error to designate an active key name not in the key set. From discussion in [story #94466084](https://www.pivotaltracker.com/story/show/94466084), we intend to use AES-GCM as the encryption and authentication algorithm for records so encryption key values are keys suitable for AES-GCM, base64-encoded.
+
+All the records in the Diego data schema should be encrypted with the active key. As this is a concern only of the formatting of individual records in etcd, it falls under the domain of the data-formatting system, and therefore requires a suitable envelope of metadata. From discussion in IPM, this should be of the form `<encryption-indicator><key-name>:<base64-encoded-data>`.
+
+- `<encryption-indicator>` is a prefix indicating unambiguously that the following data is encrypted. The 4-byte sequence `0007` was suggested in IPM.
+- `<key-name>` is the name of one of the recognized encryption keys. For simplicity of processing the envelop, it is suggested that this key be a fixed length.
+- `<base64-encoded-data>` is the base64-encoded encrypted data. After base64-decoding and decryption by the specified key, it may contain data that is itself in another formatting envelope.
+
+Conceptually, after the master BBS is done with its migration check, all the data in the database should be encrypted with its active encryption key. As changing the active encryption key should be an infrequent operation, and as even reading all of the data from etcd and checking that it is in the current active key is expensive, we propose the following optimization:
+
+On acquisition of the master lock, the newly appointed master BBS should examine the (unencrypted!) `/encryption-key` key in etcd.
+
+- If the key is not present, or has a value different from the name of the BBS's active key, the BBS migrates data to be encrypted with its active key, as described below. If the value is present in etcd but *not* in the set of the BBS's recognized key names, it should release the lock and crash with loud, specific logging.
+- If the key is present and has a value matching the name of the BBS's active key, the BBS does not do any encryption migration of data.
+
+If the BBS needs to re-encrypt data as a result of a key name absence or difference, it should do so as follows:
+
+- On starting the migration process, it deletes the `/encryption-key` key.
+- It migrates data to encrypt with the active key.
+- After successfully encrypting all the records with its active key, it writes the active key name to the `/encryption-key` key in etcd.
+
+The presence of a value in `/encryption-key` then guarantees that all the records in the database are encrypted with the master BBS's active key. The absence of a value indicates that encryption has not been carried out or is in a potentially mixed state, as the result of a partly completed migration.
+
+Diego [story #103024166](https://www.pivotaltracker.com/story/show/103024166) will carry out the implementation of the encryption proposal.
+
+### Concerns and Mitigations
+
+**Significant BBS API outage for migrating larger datasets**
+
+We will start by introducing the encryption migration as part of the offline database migration process (that is, where the BBS API is unavailable). Since the encryption process is implemented entirely in the data-formatting layer, it is something that can move to an online portion of the migration process later. 
+
+**During a deploy that changes the active key, the active key may change several times, thrashing the database**
+
+We expect this not to occur during a typical deployment. Although the BBS master may change several times over the course of the deploy, once an updated BBS acquires the master lock, it should retain it for the rest of the deploy. This BBS instance should then be the only instance to conduct an actual migration of either data schema or format.
+
 
 ## Versioning APIs and Clients
 

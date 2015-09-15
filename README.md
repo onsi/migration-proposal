@@ -262,13 +262,13 @@ We can also use the BBS migration system to handle encryption of data at rest in
 - A non-empty set of named encryption keys (for example, `A:abc123`, `B:bef456`).
 - A single key name designated as active (for example, `A`).
 
-Encryption key names should be strictly alphanumeric and are case-sensitive; see below for other potential constraints on the key format. It will be a BBS configuration error to designate an active key name not in the key set. From discussion in [story #94466084](https://www.pivotaltracker.com/story/show/94466084), we intend to use AES-GCM as the encryption and authentication algorithm for records so encryption key values are keys suitable for AES-GCM, base64-encoded.
+Encryption key names should be strictly alphanumeric and are case-sensitive; see below for other potential constraints on the key format. It will be a BBS configuration error to designate an active key name not in the key set. From discussion in [story #94466084](https://www.pivotaltracker.com/story/show/94466084), we intend to use AES-GCM as the encryption and authentication algorithm for records. The encryption key value should be a sequence of bytes that we use to produce the AES key and other cryptographic data deterministically.
 
-All the records in the Diego data schema should be encrypted with the active key. As this is a concern only of the formatting of individual records in etcd, it falls under the domain of the data-formatting system, and therefore requires a suitable envelope of metadata. From discussion in IPM, this should be of the form `<encryption-indicator><key-name>:<base64-encoded-data>`.
+All the records in the Diego data schema should be encrypted with the active key. As this is a concern only of the formatting of individual records in etcd, it falls under the domain of the data-formatting system, and therefore requires a suitable envelope of metadata. From discussion in IPM, this should be of the form `<encryption-indicator><key-name>:<encrypted-data>`.
 
 - `<encryption-indicator>` is a prefix indicating unambiguously that the following data is encrypted. The 4-byte sequence `0007` was suggested in IPM.
-- `<key-name>` is the name of one of the recognized encryption keys. For simplicity of processing the envelop, it is suggested that this key be a fixed length.
-- `<base64-encoded-data>` is the base64-encoded encrypted data. After base64-decoding and decryption by the specified key, it may contain data that is itself in another formatting envelope.
+- `<key-name>` is the name of one of the recognized encryption keys. For simplicity of processing the envelope, this will be a 4-byte sequence.
+- `<encrypted-data>` is the encrypted data. After decryption by the specified key, it may contain data that is itself in another formatting envelope.
 
 Conceptually, after the master BBS is done with its migration check, all the data in the database should be encrypted with its active encryption key. As changing the active encryption key should be an infrequent operation, and as even reading all of the data from etcd and checking that it is in the current active key is expensive, we propose the following optimization:
 

@@ -151,10 +151,6 @@ Note that, with this approach, we can implement rollbacks at a later point in ti
 
 Let's now dive into the details for the BBS Migration mechanism.  In this section we assume no support for rollbacks (the earlier section illustrates what rollback support could look like).
 
-Here are 2 proposals.  A is more complex but paves the way for rollbacks a little more cleanly, feel free to jump down to B first.
-
-### Proposal A - more complex, sets us up for rollbacks
-
 We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer (in fact, a timestamp) - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
 
 The current state of the database is stored *in* the database under a `/version` key.  This key has a (JSON/Protobuf-encoded) value of the form:
@@ -166,7 +162,7 @@ type Version struct {
 }
 ```
 
-When a BBS comes up it excercises the following state-machine control loop:
+When a BBS comes up it exercises the following state-machine control loop:
 
 - Attempt to grab the lock
     + Upon failure, keep trying.
@@ -200,49 +196,6 @@ And here's what the actions correspond to:
 - `SERVE_REQUESTS`: start handling requests.
 - `SHUT_DOWN`: release the lock.  Write nothing to the database.  Shut down.
 
-### Proposal B - simpler, might need tweaks to support rollbacks
-
-We propose that the BBS have its data version, referred to as `BBSDataVersion` hard-coded into the binary (our proposed migration mechanism does not need any command line arguments).  `BBSDataVersion` should be a simple integer (in fact, a timestamp) - semantic versioning applies at the top level of "Diego" and we don't think introducing semantic versioning down at the DB schema level is necessary.
-
-The current state of the database is stored *in* the database under a `/version` key.  This key has a (JSON/Protobuf-encoded) value of the form:
-
-```
-type Version struct {
-    CurrentVersion int
-    State VersionState // one of ACTIVE or MIGRATING
-}
-```
-
-When a BBS comes up it excercises the following state-machine control loop:
-
-- Attempt to grab the lock
-    + Upon failure, keep trying.
-- Upon success, fetch `/version`
-    + If the database version is more modern than the BBS version shut down. (see table below)
-    + If the database version equals the BBS version, start serving requests. (see table below)
-    + If the database version is less modern than the BBS version, start/continue the migration then serve requests. (see table below)
-- During a migration a 503 response is returned to all requests.  Clients should be taught either to retry on a backoff or (perhaps more simply) forward the 503 along.
-- Upon a successful migration, all requests should be handled.
-
-Here's the comprehensive logic table for handling the various states of `Version`
-
-`CurrentVersion` | `State` | Action | Reason
-----------------|-----------------|--------|-------
-`nil` | `nil` | `END_MIGRATION` then `SERVE_REQUESTS` | **Expected**: a new BBS is talking to an empty database.  Mark the version as current and start handling requests.
-`< BBSDataVersion` | `ACTIVE` | `BEGIN_MIGRATION` then `END_MIGRATION` then `SERVE_REQUESTS` | **Expected**: a new BBS has been elected master for the first time and sees a database that needs migration.
-`< BBSDataVersion` | `MIGRATING` | `CONTINUE_MIGRATION` then `END_MIGRATION` then `SERVE_REQUESTS` | **Conceivable**: a new BBS failed mid-migration.  Let's try again.
-`== BBSDataVersion` | `ACTIVE` | `SERVE_REQUESTS` | **Expected**: database is up-to-date.  We just changed leaders.
-`== BBSDataVersion` | `MIGRATING` | `SHUT_DOWN` | **Conceivable**: a migration was taking place, but the master in charge of the migration died mid-migration and an older version of the BBS gained the lock.  It should let go and wait to be upgraded.
-`> BBSDataVersion` | `ACTIVE` | `SHUT_DOWN` | **Conceivable**: a migration was taking place, but the master in charge of the migration died and an older version of the BBS gained the lock.  It should let go and wait to be upgraded.
-`> BBSDataVersion` | `MIGRATING` | `SHUT_DOWN` | **Inconceivable**: an operator downgraded the cluster without nuking the database.  It had formerly failed to migrate.
-
-And here's what the actions correspond to:
-
-- `BEGIN_MIGRATION`: set `State` to `MIGRATING` and begin migrating data.  During this time requests return 503.
-- `CONTINUE_MIGRATION`: set `State` to `MIGRATING` and continue migrating data (assumes migrations are idempotent).  During this time requests return 503.
-- `END_MIGRATION`: set `CurrentVersion` to `BBSDataVersion` and `State` to `ACTIVE`.  
-- `SERVE_REQUESTS`: start handling requests.
-- `SHUT_DOWN`: release the lock.  Write nothing to the database.  Shut down.
 
 ### Handling failed migrations
 

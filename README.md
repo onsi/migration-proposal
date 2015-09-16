@@ -147,6 +147,21 @@ Note that, with this approach, we can implement rollbacks at a later point in ti
 
 > I am aware that SSH connectivity fails if we nuke the ETCD cache because the private keys stored int he DesiredLRPs get regenerated.  This is non-ideal but is OK, in my opinion, as it doesn't represent significant downtime.  Developers simply need to restart their app/kill an instance to regain SSH access.
 
+
+## Constraints on Schema Operations during Migrations
+
+For rollbacks of in-flight migrations to be possible, we as developers need to observe certain constraints about how we write migrations and the BBS migrator. In particular, until the BBS migrator is certain that the migration has completed successfully, none of the data in obsolete parts of previous schemas should be deleted. This constraint allows the migration system to support a rollback of an in-flight migration, as discussed in the `Version`-logic table below.
+
+A migration moving from the current version to its target version should also make no assumptions about the validity of data that already exists in its target schema, and generally should clear out or overwrite such data during its migration.
+
+As a contrived example, suppose version 1001 of the schema stores data under keys `/:guid/foo` and `/:guid/bar`. Version 1002 of the schema stores the same data, but the `bar` data now lives under the `quux` key. The migration from 1001 to 1002 must be structured as follows:
+
+- Starting migration: write `1002` to `TargetVersion` in the `\version` key.
+- **Copy** `/:guid/bar` to `/:guid/quux` for each `:guid`.
+- Migration completed successfully: write `1002` to `CurrentVersion` in the `\version` key.
+- Clean up data not in `1002` schema (`/:guid/bar` keys).
+
+
 ## The BBS Migration Mechanism
 
 Let's now dive into the details for the BBS Migration mechanism.  In this section we assume no support for rollbacks (the earlier section illustrates what rollback support could look like).
@@ -183,7 +198,7 @@ Here's the comprehensive logic table for handling the various states of `Version
 `< BBSDataVersion` | `> BBSDataVersion` | `SHUT_DOWN` | **Inconceivable**: an operator took a cluster that had formerly failed to migrate and attempted to upgrade it.  Bad.
 `== BBSDataVersion` | `< BBSDataVersion` | `SHUT_DOWN` | **Inconceivable***: for now.  In future versions this could be how a rollback is encoded.
 `== BBSDataVersion` | `== BBSDataVersion` | `SERVE_REQUESTS` | **Expected**: database is up-to-date.  We just changed leaders.
-`== BBSDataVersion` | `> BBSDataVersion` | `SHUT_DOWN` | **Conceivable**: a migration was taking place, but the master in charge of the migration died mid-migration and an older version of the BBS gained the lock.  It should let go and wait to be upgraded.
+`== BBSDataVersion` | `> BBSDataVersion` | `SERVE_REQUESTS` | **Conceivable**: a migration was taking place, but the master in charge of the migration died mid-migration and an older version of the BBS gained the lock. All the data from the `CurrentVersion` schema should still be present.
 `> BBSDataVersion` | `< BBSDataVersion` | `SHUT_DOWN` | **Inconceivable**: this *could* happen in the future when we support rollbacks but it would represent a botched rollback.
 `> BBSDataVersion` | `== BBSDataVersion` | `SHUT_DOWN` | **Inconceivable***: for now.  In future versions this could be how a rollback is encoded.
 `> BBSDataVersion` | `> BBSDataVersion` | `SHUT_DOWN` | **Conceivable**: a migration took place, but the master in charge died.  An older version of the BBS gained the lock.  It should let go and wait to be upgraded.

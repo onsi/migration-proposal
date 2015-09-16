@@ -156,9 +156,9 @@ A migration moving from the current version to its target version should also ma
 
 As a contrived example, suppose version 1001 of the schema stores data under keys `/:guid/foo` and `/:guid/bar`. Version 1002 of the schema stores the same data, but the `bar` data now lives under the `quux` key. The migration from 1001 to 1002 must be structured as follows:
 
-- Starting migration: write `1002` to `TargetVersion` in the `\version` key.
+- Starting migration: write `1002` to `TargetVersion` in the `/version` key.
 - **Copy** `/:guid/bar` to `/:guid/quux` for each `:guid`.
-- Migration completed successfully: write `1002` to `CurrentVersion` in the `\version` key.
+- Migration completed successfully: write `1002` to `CurrentVersion` in the `/version` key.
 - Clean up data not in `1002` schema (`/:guid/bar` keys).
 
 

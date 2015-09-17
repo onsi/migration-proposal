@@ -1,3 +1,5 @@
+# **NOTE**: This proposal has moved to the [Diego Dev Notes](https://github.com/cloudfoundry-incubator/diego-dev-notes), at [accepted_proposals/bbs-migrations.md](https://github.com/cloudfoundry-incubator/diego-dev-notes/blob/master/accepted_proposals/bbs-migrations.md).
+
 # The Versioning Problem
 
 Now that we've centralized access to Diego's database via the BBS server we're primed to attack the problem of data versioning & migration and API versioning (collectively referred to as "The Versioning Problem".
